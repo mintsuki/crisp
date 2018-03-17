@@ -1,0 +1,5 @@
+CRISP architecture
+==================
+
+CRISP (Conditional Reduced Instruction Set Processing) aims to be a
+general purpose CPU architecture based around the KISS philosophy.
