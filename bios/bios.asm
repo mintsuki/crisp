@@ -23,7 +23,7 @@ debug_print:
   .loop:
     loadb r1, r0
     inc r0
-    cmp r1, &0
+    iszero r1
     ifeq jmp &.out
     outb r2, r1
     jmp &.loop
@@ -40,7 +40,7 @@ debug_input:
     mov r2, &0x40
   .loop:
     inb r1, r2
-    cmp r1, &0
+    iszero r1
     ifeq jmp &.loop
     outb r2, r1
     cmp r1, &0x0a

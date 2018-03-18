@@ -537,11 +537,15 @@ int emu_cycle(CRISP_core *cpu, int dbg) {
                 if (dbg)
                     printf("0x%016" PRIx64 "\n", imm);
                 cpu->sp -= 8;
+                *((uint64_t *)(system_ram + cpu->sp)) = cpu->flags;
+                cpu->sp -= 8;
                 *((uint64_t *)(system_ram + cpu->sp)) = cpu->pc + 12;
                 cpu->pc = imm;
             } else {
                 if (dbg)
                     printf("r%d\n", operand1);
+                cpu->sp -= 8;
+                *((uint64_t *)(system_ram + cpu->sp)) = cpu->flags;
                 cpu->sp -= 8;
                 *((uint64_t *)(system_ram + cpu->sp)) = cpu->pc + 4;
                 cpu->pc = ((uint64_t *)&cpu->r0)[operand1];
@@ -552,7 +556,8 @@ int emu_cycle(CRISP_core *cpu, int dbg) {
             if (dbg)
                 printf("ret\n");
             cpu->pc = *((uint64_t *)(system_ram + cpu->sp));
-            cpu->sp += 8;
+            cpu->flags = *((uint64_t *)(system_ram + cpu->sp + 8));
+            cpu->sp += 16;
             break;
         case 0xa8:
             /* jmp */
@@ -598,6 +603,16 @@ int emu_cycle(CRISP_core *cpu, int dbg) {
             }
             if (dbg)
                 putchar('\n');
+            break;
+        case 0xb1:
+            /* iszero */
+            if (dbg)
+                printf("iszero r%d\n", operand1);
+            if (!((uint64_t *)&cpu->r0)[operand1])
+                cpu->flags |= EQU_FLAG;
+            else
+                cpu->flags &= ~EQU_FLAG;
+            cpu->pc += 4;
             break;
         case 0xc0:
             /* inc */
