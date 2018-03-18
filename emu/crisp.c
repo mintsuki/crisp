@@ -27,6 +27,42 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdlib.h>
 #include <inttypes.h>
 #include <string.h>
+#include <termios.h>
+#include <signal.h>
+
+volatile int ctrlc_break = 0;
+
+void ctrlc_handler(int unused) {
+    printf("\nctrl-c breakpoint\n");
+    ctrlc_break = 1;
+    return;
+}
+
+char ngetchar(void) {
+    struct termios old_termios, new_termios;
+
+    tcgetattr(0, &old_termios);
+
+    new_termios = old_termios;
+    new_termios.c_lflag &= ~ICANON;
+    new_termios.c_lflag &= ~ECHO;
+    //new_termios.c_lflag &= ~ISIG;
+    new_termios.c_cc[VMIN] = 0;
+    new_termios.c_cc[VTIME] = 0;
+
+    tcsetattr(0, TCSANOW, &new_termios);
+
+    int c = getchar();
+
+    tcsetattr(0, TCSANOW, &old_termios);
+
+    switch (c) {
+        case EOF:
+            return 0;
+        default:
+            return c;
+    }
+}
 
 #define EQU_FLAG ((uint64_t)1 << 0)
 
@@ -109,6 +145,8 @@ CRISP_core *cpu0;
 uint8_t *system_ram;
 
 int main(int argc, char *argv[]) {
+
+    signal(SIGINT, ctrlc_handler);
 
     printf("Starting emulation\n");
     printf("Core count = %d\n", core_count);
@@ -214,8 +252,10 @@ void dbg_console(CRISP_core *cpu) {
             dbg_regdump(cpu);
         else if (!strcmp(prompt, "q\n"))
             return;
-        else if (!strcmp(prompt, "c\n"))
-            while (!emu_cycle(cpu, 0));
+        else if (!strcmp(prompt, "c\n")) {
+            while (!emu_cycle(cpu, 0) && !ctrlc_break);
+            ctrlc_break = 0;
+        }
         else if (*prompt == '\n')
             emu_cycle(cpu, 1);
     }
@@ -241,6 +281,31 @@ void CRISP_outb(uint64_t port, uint8_t value, int dbg) {
     }
 
     return;
+
+}
+
+uint8_t CRISP_inb(uint64_t port, int dbg) {
+
+    if (dbg)
+        printf("input from port 0x%04" PRIx64 "\n", port);
+
+    switch (port) {
+        case 0x40:
+            /* debug input */
+            if (dbg) {
+                char buf[256];
+                printf("CPU reading from debug console, char to return >> ");
+                fgets(buf, 255, stdin);
+                return buf[0];
+            } else {
+                return ngetchar();
+            }
+        default:
+            /* unassigned port */
+            if (dbg)
+                printf("read from unassigned port, returning 0xff\n");
+            return 0xff;
+    }
 
 }
 
@@ -369,6 +434,13 @@ int emu_cycle(CRISP_core *cpu, int dbg) {
             if (dbg)
                 printf("outb r%d, r%d\n", operand0, operand1);
             CRISP_outb(((uint64_t *)&cpu->r0)[operand0], ((uint64_t *)&cpu->r0)[operand1], dbg);
+            cpu->pc += 4;
+            break;
+        case 0x47:
+            /* inb */
+            if (dbg)
+                printf("inb r%d, r%d\n", operand0, operand1);
+            ((uint64_t *)&cpu->r0)[operand0] = CRISP_inb(((uint64_t *)&cpu->r0)[operand1], dbg);
             cpu->pc += 4;
             break;
         case 0x50:
@@ -519,6 +591,9 @@ int emu_cycle(CRISP_core *cpu, int dbg) {
             if (val0 == val1) {
                 /* equality */
                 cpu->flags |= EQU_FLAG;
+            } else {
+                /* inequality */
+                cpu->flags &= ~EQU_FLAG;
             }
             }
             if (dbg)
